@@ -1,0 +1,25 @@
+---
+name: Apache2-AutoIndex-XSLT
+version: 0.00
+author:
+  - Nicola Worthington <nicolaw@cpan.org>
+abstract: XSLT Based Directory Listings
+license: open_source
+requires:
+  Apache2::Access: 0
+  Apache2::Connection: 0
+  Apache2::Const: 0
+  Apache2::Log: 0
+  Apache2::RequestRec: 0
+  Apache2::RequestUtil: 0
+  mod_perl2: 0
+build_requires:
+  Test: 0
+  Test::More: 0
+  Test::Pod: 0
+  Test::Pod::Coverage: 0
+provides:
+  Apache2::AutoIndex::XSLT:
+    file: lib/Apache2/AutoIndex/XSLT.pm
+    version: 0.00
+generated_by: Module::Build version 0.2611
