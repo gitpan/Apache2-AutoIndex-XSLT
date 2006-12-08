@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 ############################################################
 #
-#   $Id: Build.PL 816 2006-11-26 19:09:52Z nicolaw $
+#   $Id: Build.PL 852 2006-12-08 15:46:49Z nicolaw $
 #   DistBuild.PL - CPAN Distribution Build Script for Subversion & CVS
 #
 #   Copyright 2006 Nicola Worthington
@@ -34,20 +34,28 @@ $build = Module::Build->new(
 		sign               => 0,
 
 		requires => {
-			'Apache2::Access' => 0,
-			'Apache2::Connection' => 0,
-			'Apache2::Log' => 0,
-			'Apache2::RequestRec' => 0,
+			'File::Spec'           => 0,
+			'Fcntl'                => 0,
+			'XML::Quote'           => 0,
+			'URI::Escape'          => 0,
+			'Apache2::ServerRec'   => 0,
+			'Apache2::RequestRec'  => 0,
 			'Apache2::RequestUtil' => 0,
-			'Apache2::Const' => 0,
-			'mod_perl2' => 0,
+			'Apache2::Const'       => 0,
+			'Apache2::Log'         => 0,
+			'Apache2::Module'      => 0,
+			'Apache2::CmdParms'    => 0,
+			'Apache2::ServerUtil'  => 0,
+			'Apache2::Util'        => 0,
+			'Apache2::URI'         => 0,
+			'Apache2::Access'      => 0,
 		},
 
 		build_requires => {
-			'Test'                => 0,
-			'Test::More'          => 0,
-			'Test::Pod'           => 0,
-			'Test::Pod::Coverage' => 0,
+			'Test'                 => 0,
+			'Test::More'           => 0,
+			'Test::Pod'            => 0,
+			'Test::Pod::Coverage'  => 0,
 		},
 	);
 

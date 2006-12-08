@@ -18,6 +18,7 @@ examples/icons/__my_music.png
 examples/icons/__my_pictures.png
 examples/icons/__my_videos.png
 examples/icons/__network_drive.png
+examples/icons/__recycle_bin.png
 examples/icons/__unknown.png
 examples/icons/__webcam.png
 examples/icons/ai.png
@@ -71,6 +72,8 @@ examples/icons/pem.png
 examples/icons/pl.png
 examples/icons/pm.png
 examples/icons/png.png
+examples/icons/pps.png
+examples/icons/ppt.png
 examples/icons/ps.png
 examples/icons/psd.png
 examples/icons/ra.png
@@ -82,6 +85,7 @@ examples/icons/rm.png
 examples/icons/rpm.png
 examples/icons/s3m.png
 examples/icons/sh.png
+examples/icons/shtml.png
 examples/icons/sql.png
 examples/icons/swf.png
 examples/icons/sxc.png
@@ -124,5 +128,4 @@ README
 t/10pod.t
 t/11pod_coverage.t
 t/20compile.t
-test
 TODO
