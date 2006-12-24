@@ -1,4 +1,17 @@
-Version 0.00_1 - 8th Devember 2006
+Version 0.01 - 25th December 2006
+    + Still development code.
+    + Changed default value of 'mycomputer_root' variable
+      in examples/apache/htdocs/index.xslt from 'true'
+      to 'false'.
+    + Improved examples/apache/htdocs/index.xslt in various
+      ways.
+    + Added propper parsing of apache configuration
+      directives.
+    + Mostly implemented the AddIcon configuration
+      directive handling code.
+    + Various other things.
+
+Version 0.00_1 - 8th December 2006
     + Added some modules to be loaded that were mistakenly
       not loaded.
     + Updated Build.PL to reflect all the modules that are

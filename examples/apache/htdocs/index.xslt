@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="iso-8859-1"?>
 <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="2.0">
 	<xsl:output encoding="iso-8859-1" method="html" indent="yes" doctype-public="-//W3C//DTD XHTML 1.0 Strict//EN"/>
-	<xsl:variable name="mycomputer_root" select="'true'"/>
+	<xsl:variable name="mycomputer_root" select="'false'"/>
 	<xsl:variable name="sortorder_href">
 		<xsl:choose>
 			<xsl:when test="/index/options/option[@name='O']/@value = 'D'"><xsl:text>A</xsl:text></xsl:when>
@@ -439,18 +439,43 @@
 				</tr>
 			</xsl:when>
 			<xsl:otherwise>
+				<xsl:variable name="title">
+					<xsl:choose>
+						<xsl:when test="@title = 'recyclebin' or @title = 'RecycleBin'">
+							<xsl:text>Recycle Bin</xsl:text>
+						</xsl:when>
+						<xsl:when test="@title = 'documents' or @title = 'Documents' or @title = 'MyDocuments'">
+							<xsl:text>My Documents</xsl:text>
+						</xsl:when>
+						<xsl:when test="@title = 'pictures' or @title = 'Pictures' or @title = 'MyPictures'">
+							<xsl:text>My Pictures</xsl:text>
+						</xsl:when>
+						<xsl:when test="@title = 'videos' or @title = 'Videos' or @title = 'MyVideos'">
+							<xsl:text>My Videos</xsl:text>
+						</xsl:when>
+						<xsl:when test="@title = 'music' or @title = 'Music' or @title = 'MyMusic'">
+							<xsl:text>My Music</xsl:text>
+						</xsl:when>
+						<xsl:otherwise>
+							<xsl:value-of select="@title"/>
+						</xsl:otherwise>
+					</xsl:choose>
+				</xsl:variable>
 				<xsl:variable name="icon">
 					<xsl:choose>
-						<xsl:when test="@title = 'My Documents'">
+						<xsl:when test="$title = 'Recycle Bin'">
+							<xsl:text>/icons/__recycle_bin.png</xsl:text>
+						</xsl:when>
+						<xsl:when test="$title = 'My Documents'">
 							<xsl:text>/icons/__my_documents.png</xsl:text>
 						</xsl:when>
-						<xsl:when test="@title = 'My Pictures'">
+						<xsl:when test="$title = 'My Pictures'">
 							<xsl:text>/icons/__my_pictures.png</xsl:text>
 						</xsl:when>
-						<xsl:when test="@title = 'My Videos'">
+						<xsl:when test="$title = 'My Videos'">
 							<xsl:text>/icons/__my_videos.png</xsl:text>
 						</xsl:when>
-						<xsl:when test="@title = 'My Music'">
+						<xsl:when test="$title = 'My Music'">
 							<xsl:text>/icons/__my_music.png</xsl:text>
 						</xsl:when>
 						<xsl:otherwise>
@@ -470,16 +495,14 @@
 						<a onmouseout="window.status='';return true">
 							<xsl:attribute name="href"><xsl:value-of select="@href"/></xsl:attribute>
 							<xsl:attribute name="onmouseover">window.status='Type: <xsl:value-of select="@desc"/> Date Modified: <xsl:value-of select="@nicemtime"/> Size: <xsl:value-of select="@nicesize"/>'; return true</xsl:attribute>
-							<xsl:value-of select="@title"/>
+							<xsl:value-of select="$title"/>
 							<span>Type: <xsl:value-of select="@desc"/>
 								<br/>Date Modified: <xsl:value-of select="@nicemtime"/>
 								<br/>Size: <xsl:value-of select="@nicesize"/>
 							</span>
 						</a>
 					</td>
-					<td class="sizecol">
-						<xsl:value-of select="@nicesize"/>
-					</td>
+					<td class="sizecol"></td>
 					<td>
 						<xsl:value-of select="@desc"/>
 					</td>

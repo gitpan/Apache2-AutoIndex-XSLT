@@ -1,6 +1,6 @@
 ############################################################
 #
-#   $Id: XSLT.pm 852 2006-12-08 15:46:49Z nicolaw $
+#   $Id: XSLT.pm 872 2006-12-24 22:41:41Z nicolaw $
 #   Apache2::AutoIndex::XSLT - XSLT Based Directory Listings
 #
 #   Copyright 2006 Nicola Worthington
@@ -42,7 +42,7 @@ use Apache2::RequestRec qw();
 use Apache2::RequestUtil qw(); # $r->document_root
 
 # Used to return various Apache constant response codes
-use Apache2::Const -compile => qw(:common :options :config DIR_MAGIC_TYPE);
+use Apache2::Const -compile => qw(:common :options :config :cmd_how :override :types);
 
 # Used for writing to Apache logs
 use Apache2::Log qw();
@@ -72,21 +72,10 @@ use Apache2::Access qw(); # $r->allow_options
 # http://httpd.apache.org/docs/2.2/mod/mod_dir.html
 # http://www.modperl.com/book/chapters/ch8.html
 
-use vars qw($VERSION @DIRECTIVES %COUNTERS %FILETYPES);
-$VERSION = '0.00' || sprintf('%d.%02d', q$Revision: 531 $ =~ /(\d+)/g);
+use vars qw($VERSION %DIRECTIVES %COUNTERS %FILETYPES);
+$VERSION = '0.01' || sprintf('%d.%02d', q$Revision: 531 $ =~ /(\d+)/g);
 %COUNTERS = (Listings => 0, Files => 0, Directories => 0, Errors => 0);
-@DIRECTIVES = qw(AddAlt AddAltByEncoding AddAltByType AddDescription AddIcon
-	AddIconByEncoding AddIconByType DefaultIcon HeaderName IndexIgnore
-	IndexOptions IndexOrderDefault IndexStyleSheet ReadmeName DirectoryIndex
-	DirectorySlash IndexXSLT FileTypesFilesname);
 
-# Let Apache2::Status know we're here if it's hanging around
-eval { Apache2::Status->menu_item('AutoIndex' => sprintf('%s status',__PACKAGE__),
-	\&status) if Apache2::Module::loaded('Apache2::Status'); };
-
-# Register our interesting in a bunch of Apache configuration directives
-eval { Apache2::Module::add(__PACKAGE__, [ map { { name => $_ } } @DIRECTIVES ]); };
-if ($@) { warn $@; print $@; }
 
 
 
@@ -109,9 +98,12 @@ sub handler {
 
 	# Read in the filetypes information
 	if (!defined %FILETYPES && defined $dir_cfg->{FileTypesFilename}) {
-		FileTypesFilename: for my $FileTypesFilename ($dir_cfg->{FileTypesFilename},
+		FileTypesFilename: for my $FileTypesFilename (
+				$dir_cfg->{FileTypesFilename},
 				File::Spec->catfile($r->document_root,$dir_cfg->{FileTypesFilename}),
-				File::Spec->catfile(Apache2::ServerUtil->server_root,$dir_cfg->{FileTypesFilename})) {
+				File::Spec->catfile(Apache2::ServerUtil->server_root,'conf',$dir_cfg->{FileTypesFilename}),
+				File::Spec->catfile(Apache2::ServerUtil->server_root,$dir_cfg->{FileTypesFilename})
+			) {
 			my $ext = '';
 			if (open(FH,'<',$FileTypesFilename)) {
 				while (local $_ = <FH>) {
@@ -138,7 +130,7 @@ sub handler {
 	}
 
 	# Make sure we're at a URL with a trailing slash
-	unless ($r->uri =~ m,/$,) {# || $r->path_info){
+	if ($dir_cfg->{DirectorySlash} && $r->uri !~ m,/$,) {# || $r->path_info){
 		$r->headers_out->add(Location => sprintf('%s/%s',
 				$r->uri,
 				($r->args ? '?'.$r->args : '')
@@ -206,13 +198,19 @@ sub transhandler {
 # Apache2::Status status page handler
 #
 
+# Let Apache2::Status know we're here if it's hanging around
+unless (exists $ENV{AUTOMATED_TESTING}) {
+	eval { Apache2::Status->menu_item('AutoIndex' => sprintf('%s status',__PACKAGE__),
+		\&status) if Apache2::Module::loaded('Apache2::Status'); };
+}
+
 sub status {
 	my $r = shift;
 
 	my @status;
 	push @status, sprintf('<b>%s %s</b><br />', __PACKAGE__, $VERSION);
 	push @status, sprintf('<p><b>Configuration Directives:</b> %s</p>',
-			join(', ',@DIRECTIVES)
+			join(', ',keys %DIRECTIVES)
 		);
 
 	push @status, "<table>\n";
@@ -260,6 +258,7 @@ sub init_handler {
 
 	return ($qstring,$dir_cfg);
 }
+
 
 sub dir_xml {
 	my ($r,$dir_cfg,$qstring) = @_;
@@ -331,18 +330,39 @@ sub print_xml_options {
 	}
 
 	# Apache configuration directives
-	for my $d (@DIRECTIVES) {
+	for my $d (keys %DIRECTIVES) {
 		for my $value ((
 			!exists($dir_cfg->{$d}) ? ()
 								: ref($dir_cfg->{$d}) eq 'ARRAY'
 								? @{$dir_cfg->{$d}}
 								: ($dir_cfg->{$d})
 				)) {
-			printf($format,$d,$value);
+			# Don't bother printing stuff that we only have
+			# some confusing internal complex data structure for
+			printf($format,$d,$value) unless ref($value);
 		}
 	}
 
 	print "\t</options>\n";
+}
+
+
+sub icon_by_extension {
+	my ($r,$id,$ext,$dir_cfg) = @_;
+
+	my $alt = '';
+	my $icon =
+		$ext && -f File::Spec->catfile($r->document_root,'icons',lc("$ext.png")) 
+			? '/icons/'.lc("$ext.png")
+			: $dir_cfg->{DefaultIcon} || '';
+
+	while (my ($re,$v) = each %{$dir_cfg->{AddIconRegex}}) {
+		if ($id =~ /$re$/) {
+			($alt,$icon) = @{$v};
+		}
+	}
+
+	return ($alt,$icon);
 }
 
 
@@ -354,15 +374,19 @@ sub build_attributes {
 
 	if ($type eq 'file') {
 		($attr->{ext}) = $id =~ /\.([a-z0-9_]+)$/i;
-		$attr->{icon} = $dir_cfg->{DefaultIcon} || '';
-		$attr->{icon} = $attr->{ext} &&
-			-f File::Spec->catfile($r->document_root,'icons',lc("$attr->{ext}.png"))
-				? '/icons/'.lc("$attr->{ext}.png")
-				: $dir_cfg->{DefaultIcon} || '';
-	}
+		($attr->{alt},$attr->{icon}) = icon_by_extension($r,$id,$attr->{ext},$dir_cfg);
 
-	$attr->{icon} = '/icons/__dir.png' if $type eq 'dir';
-	$attr->{icon} = '/icons/__back.png' if $type eq 'updir';
+	} elsif ($type eq 'dir') {
+		$attr->{alt} = 'DIR';
+		$attr->{icon} = '/icons/__dir.png';
+		if ($dir_cfg->{AddIconRegex}->{'^^DIRECTORY^^'}) {
+			($attr->{alt},$attr->{icon}) =
+				@{$dir_cfg->{AddIconRegex}->{'^^DIRECTORY^^'}};
+		}
+
+	} elsif ($type eq 'updir') {
+		$attr->{icon} = '/icons/__back.png';
+	}
 
 	unless ($type eq 'updir') {
 		#$attr->{id} = $id; # This serves no real purpose anymor
@@ -391,12 +415,11 @@ sub file_type {
 sub print_xml_header {
 	my ($r,$dir_cfg) = @_;
 
-	my $css  = $dir_cfg->{IndexStyleSheet} || '';
-	my $xslt = $dir_cfg->{IndexXSLT} || '';
+	my $xslt = $dir_cfg->{IndexStyleSheet} || '';
+	my $type = $xslt =~ /\.css/ ? 'text/css' : 'text/xsl';
 
 	print qq{<?xml version="1.0"?>\n};
-	print qq{<?xml-stylesheet type="text/css" href="$css"?>\n} if $css;
-	print qq{<?xml-stylesheet type="text/xsl" href="$xslt"?>\n} if $xslt;
+	print qq{<?xml-stylesheet type="$type" href="$xslt"?>\n} if $xslt;
 	print qq{$_\n} for (
 			'<!DOCTYPE index [',
 			'  <!ELEMENT index (options?, updir?, (file | dir)*)>',
@@ -480,12 +503,6 @@ sub stat_file {
 	$rtn{nicesize} = comify(sprintf('%d KB',
 						($rtn{size} + ($rtn{size} ? 1024 : 0))/1024
 					));
-#	eval {
-#		require Number::Format;
-#		my $format = new Number::Format;
-#		$rtn{nicesize} = $format->format_bytes($rtn{size},0).'B';
-#		$rtn{nicesize} =~ s/(\D+)$/ $1/;
-#	};
 
 	# Reformat times to this format: yyyy-mm-ddThh:mm-tz:tz
 	for (qw(mtime ctime)) {
@@ -524,17 +541,17 @@ sub file_mode {
 		( ($mode & Fcntl::S_IRUSR()) ? 'r' : '-' ) .
 		( ($mode & Fcntl::S_IWUSR()) ? 'w' : '-' ) .
 		( ($mode & Fcntl::S_ISUID()) ? (($mode & Fcntl::S_IXUSR()) ? 's' : 'S')
-									: (($mode & Fcntl::S_IXUSR()) ? 'x' : '-') ) .
+									 : (($mode & Fcntl::S_IXUSR()) ? 'x' : '-') ) .
 
 		( ($mode & Fcntl::S_IRGRP()) ? 'r' : '-' ) .
 		( ($mode & Fcntl::S_IWGRP()) ? 'w' : '-' ) .
 		( ($mode & Fcntl::S_ISGID()) ? (($mode & Fcntl::S_IXGRP()) ? 's' : 'S')
-									: (($mode & Fcntl::S_IXGRP()) ? 'x' : '-') ) .
+									 : (($mode & Fcntl::S_IXGRP()) ? 'x' : '-') ) .
 
 		( ($mode & Fcntl::S_IROTH()) ? 'r' : '-' ) .
 		( ($mode & Fcntl::S_IWOTH()) ? 'w' : '-' ) .
 		( ($mode & Fcntl::S_ISVTX()) ? (($mode & Fcntl::S_IXOTH()) ? 't' : 'T')
-									: (($mode & Fcntl::S_IXOTH()) ? 'x' : '-') );
+									 : (($mode & Fcntl::S_IXOTH()) ? 'x' : '-') );
 }
 
 
@@ -548,7 +565,136 @@ sub file_mode {
 
 #
 # Handle all Apache configuration directives
+# http://perl.apache.org/docs/2.0/user/config/custom.html
 #
+
+%DIRECTIVES = (
+	# http://search.cpan.org/~nicolaw/Apache2-AutoIndex-XSLT/lib/Apache2/AutoIndex/XSLT.pm
+		FileTypesFilename => {
+				name         => 'FileTypesFilename',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::TAKE1,
+				errmsg       => 'FileTypesFilename file',
+			},
+
+	# http://httpd.apache.org/docs/2.2/mod/mod_autoindex.html
+		AddAlt => {
+				name         => 'AddAlt',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::ITERATE2,
+				errmsg       => 'AddAlt string file [file] ...',
+			},
+		AddAltByEncoding => {
+				name         => 'AddAltByEncoding',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::ITERATE2,
+				errmsg       => 'AddAltByEncoding string MIME-encoding [MIME-encoding] ...',
+			},
+		AddAltByType => {
+				name         => 'AddAltByType',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::ITERATE2,
+				errmsg       => 'AddAltByType string MIME-type [MIME-type] ...',
+			},
+		AddDescription => {
+				name         => 'AddDescription',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::ITERATE2,
+				errmsg       => 'AddDescription string file [file] ...',
+			},
+		AddIcon => {
+				name         => 'AddIcon',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::ITERATE2,
+				errmsg       => 'AddIcon icon name [name] ...',
+			},
+		AddIconByEncoding => {
+				name         => 'AddIconByEncoding',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::ITERATE2,
+				errmsg       => 'AddIconByEncoding icon MIME-encoding [MIME-encoding] ...',
+			},
+		AddIconByType => {
+				name         => 'AddIconByType',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::ITERATE2,
+				errmsg       => 'AddIconByType icon MIME-type [MIME-type] ...',
+			},
+		DefaultIcon => {
+				name         => 'DefaultIcon',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::TAKE1,
+				errmsg       => 'DefaultIcon url-path',
+			},
+		HeaderName => {
+				name         => 'HeaderName',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::TAKE1,
+				errmsg       => 'HeaderName filename',
+			},
+		IndexIgnore => {
+				name         => 'IndexIgnore',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::ITERATE,
+				errmsg       => 'IndexIgnore file [file] ...',
+			},
+		IndexOptions => {
+				name         => 'IndexOptions',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::ITERATE,
+				errmsg       => 'IndexOptions [+|-]option [[+|-]option] ...',
+			},
+		IndexOrderDefault => {
+				name         => 'IndexOrderDefault',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::TAKE2,
+				errmsg       => 'IndexOrderDefault Ascending|Descending Name|Date|Size|Description',
+			},
+		IndexStyleSheet => {
+				name         => 'IndexStyleSheet',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::TAKE1,
+				errmsg       => 'IndexStyleSheet url-path',
+			},
+		ReadmeName => {
+				name         => 'ReadmeName',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::TAKE1,
+				errmsg       => 'ReadmeName filename',
+			},
+
+	# http://httpd.apache.org/docs/2.2/mod/mod_dir.html
+		DirectoryIndex => {
+				name         => 'DirectoryIndex',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::ITERATE,
+				errmsg       => 'DirectoryIndex local-url [local-url] ...',
+			},
+		DirectorySlash => {
+				name         => 'DirectorySlash',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::FLAG,
+				errmsg       => 'DirectorySlash On|Off',
+			},
+	);
+
+# Register our interest in a bunch of Apache configuration directives
+unless (exists $ENV{AUTOMATED_TESTING}) {
+	eval {
+		Apache2::Module::add(__PACKAGE__, [
+			map {
+				if (ref($DIRECTIVES{$_}) eq 'HASH') {
+					$DIRECTIVES{$_}
+				} else {{
+					name         => $_,
+					req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::ITERATE,
+				}}
+			} keys %DIRECTIVES
+		]);
+	};
+	warn $@ if $@;
+}
 
 sub dump_apache_configuration {
 	my $r = shift;
@@ -570,18 +716,13 @@ sub dump_apache_configuration {
   
 	$rtn .= sprintf("Processing by %s.\n", 
 	$s->is_virtual ? "virtual host" : "main server");
-  
-	for my $sec (sort keys %secs) {
-		$rtn .= "\nSection $sec\n";
-		for my $k (sort keys %{ $secs{$sec}||{} }) {
-			my $v = exists $secs{$sec}->{$k}
-					? $secs{$sec}->{$k}
-					: 'UNSET';
-			$v = '[' . (join ", ", map {qq{"$_"}} @$v) . ']'
-				if ref($v) eq 'ARRAY';
-			$rtn .= sprintf("%-10s : %s\n", $k, $v);
-		}
-	}
+
+	require Data::Dumper;
+	no warnings 'once';
+	local $Data::Dumper::Terse = 1;
+	local $Data::Dumper::Deepcopy = 1;
+	local $Data::Dumper::Sortkeys = 1;
+	$rtn = Data::Dumper::Dumper(\%secs);
 
 	return $rtn;
 }
@@ -590,24 +731,59 @@ sub get_config {
 	Apache2::Module::get_config(__PACKAGE__, @_);
 }
 
-sub AddAlt            { push_val('AddAlt',            @_) }
-sub AddAltByEncoding  { push_val('AddAltByEncoding',  @_) }
-sub AddAltByType      { push_val('AddAltByType',      @_) }
-sub AddDescription    { push_val('AddDescription',    @_) }
-sub AddIcon           { push_val('AddIcon',           @_) }
-sub AddIconByEncoding { push_val('AddIconByEncoding', @_) }
-sub AddIconByType     { push_val('AddIconByType',     @_) }
-sub IndexIgnore       {
-			push_val( 'IndexIgnore', @_ );
-			push_val( 'IndexIgnoreRegex', $_[0], $_[1], glob2regex($_[2]) );
+sub AddAlt {
+	push_val_on_key('AddAlt', $_[0], $_[1], join(' ',$_[2],$_[3]));
+	push_val_on_key('AddAltRegex', $_[0], $_[1], [( $_[2],glob2regex($_[3]) )]);
+}
+
+sub AddAltByEncoding  {
+	push_val_on_key('AddAltByEncoding',  @_);
+	push_val_on_key('AddAltByEncodingRegex', $_[0], $_[1], [( $_[2],$_[3] )]);
+}
+
+sub AddAltByType {
+	push_val_on_key('AddAltByType', @_);
+	push_val_on_key('AddAltByTypeRegex', $_[0], $_[1], [( $_[2],$_[3] )]);
+}
+
+sub AddDescription {
+	push_val('AddDescription', $_[0], $_[1], [( $_[3], $_[2] )]);
+}
+
+sub AddIcon {
+	push_val('AddIcon', $_[0], $_[1], join(' ',$_[2],$_[3]));
+	my $icon = $_[2];
+	my $alt = '';
+	if ($icon =~ /^\s*\(?(\S+?),(\S+?)\)\s*$/) {
+		$alt = $1;
+		$icon = $2;
 	}
+	push_val_on_key('AddIconRegex', $_[0], $_[1],
+			glob2regex($_[3]), $alt,$icon,
+		);
+}
+
+sub AddIconByEncoding {
+	push_val_on_key('AddIconByEncoding', @_);
+	push_val_on_key('AddIconByEncodingRegex', $_[0], $_[1], [( $_[2],$_[3] )]);
+}
+
+sub AddIconByType {
+	push_val_on_key('AddIconByType', @_);
+	push_val_on_key('AddIconByTypeRegex', $_[0], $_[1], [( $_[2],$_[3] )]);
+}
+
+sub IndexIgnore {
+	push_val('IndexIgnore', @_);
+	push_val('IndexIgnoreRegex', $_[0], $_[1], glob2regex($_[2]));
+}
+
 sub IndexOptions      { push_val('IndexOptions',      @_) }
 sub DirectoryIndex    { push_val('DirectoryIndex',    @_) }
 sub DefaultIcon       { set_val('DefaultIcon',        @_) }
 sub HeaderName        { set_val('HeaderName',         @_) }
 sub IndexOrderDefault { set_val('IndexOrderDefault',  @_) }
 sub IndexStyleSheet   { set_val('IndexStyleSheet',    @_) }
-sub IndexXSLT         { set_val('IndexXSLT',          @_) }
 sub ReadmeName        { set_val('ReadmeName',         @_) }
 sub DirectorySlash    { set_val('DirectorySlash',     @_) }
 sub FileTypesFilename { set_val('FileTypesFilename',  @_) }
@@ -628,11 +804,20 @@ sub set_val {
 }
   
 sub push_val {
-	my ($key, $self, $parms, $arg) = @_;
-	push @{ $self->{$key} }, $arg;
+	my ($key, $self, $parms, @args) = @_;
+	push @{ $self->{$key} }, @args;
 	unless ($parms->path) {
 		my $srv_cfg = Apache2::Module::get_config($self,$parms->server);
-		push @{ $srv_cfg->{$key} }, $arg;
+		push @{ $srv_cfg->{$key} }, @args;
+	}
+}
+
+sub push_val_on_key {
+	my ($key, $self, $parms, $key2, @args) = @_;
+	push @{ $self->{$key}->{$key2} }, @args;
+	unless ($parms->path) {
+		my $srv_cfg = Apache2::Module::get_config($self,$parms->server);
+		push @{ $srv_cfg->{$key}->{$key2} }, @args;
 	}
 }
 
@@ -642,12 +827,14 @@ sub defaults {
 			HeaderName => 'HEADER',
 			ReadmeName => 'FOOTER',
 			DirectoryIndex => [qw(index.html index.shtml)],
-			IndexXSLT => '/index.xslt',
+			IndexStyleSheet => '/index.xslt',
 			DefaultIcon => '/icons/__unknown.png',
 			IndexIgnore => [()],
-			FileTypesFilename => File::Spec->catfile(Apache2::ServerUtil->server_root,'filetypes.dat'),
+			FileTypesFilename => 'filetypes.dat',
 		}, $class;
 }
+
+# http://perl.apache.org/docs/2.0/user/config/custom.html#Examples
 
 sub merge {
 	my ($base, $add) = @_;
@@ -687,11 +874,11 @@ Apache2::AutoIndex::XSLT - XSLT Based Directory Listings
 =head1 SYNOPSIS
 
  PerlLoadModule Apache2::AutoIndex::XSLT
- <Location>
+ <Location />
      SetHandler perl-script
      PerlResponseHandler Apache2::AutoIndex::XSLT
      Options +Indexes
-     IndexXSLT /index.xslt
+     IndexStyleSheet /index.xslt
      DefaultIcon /icons/__unknown.png
      IndexIgnore .*
      IndexIgnore index.xslt
@@ -884,19 +1071,12 @@ pointing to a directory or not. With this enabled (which is the default), if a
 user requests a resource without a trailing slash, which points to a directory,
 the user will be redirected to the same resource, but with trailing slash.
 
-=head2 IndexXSLT
-
-     IndexXSLT /simple.xslt
-
-The I<IndexXSLT> directive sets the name of the file that will be used as the
-XSLT for the index listing.
-
 =head2 FileTypesFilename
 
 =head1 XSLT STYLESHEET
 
 The XSLT stylesheet will default to I<index.xslt> in the DocumentRoot of the
-website. This can be changed using the I<IndexXSLT> directive. 
+website. This can be changed using the I<IndexStyleSheet> directive. 
 
 An example I<index.xslt> file is bundled with this module in the I<examples/>
 directory.
@@ -910,7 +1090,7 @@ examples/*, L<http://bb-207-42-158-85.fallbr.tfb.net/>
 
 =head1 VERSION
 
-$Id: XSLT.pm 852 2006-12-08 15:46:49Z nicolaw $
+$Id: XSLT.pm 872 2006-12-24 22:41:41Z nicolaw $
 
 =head1 AUTHOR
 
