@@ -1,3 +1,8 @@
+# this file will be Include-d by @ServerRoot@/conf/httpd.conf
+  
+# Where Apache2::AutoIndex::XSLT can be found
+#PerlSwitches -I@ServerRoot@/../lib
+
 # Pre-load a whole bunch of modules so that
 # they're in shared memory from startup.
 # This isn't necessary if you don't want to
@@ -48,13 +53,19 @@ IndexIgnore robots.txt sitemap.gz googlee820414a2b69240d.html
 
 # Set this to true if you want to pre-
 # render the XML/XSLT on the server-side.
-#RenderXSLT Off
+RenderXSLT Off
+
+AddDescription "The planet Mars" /fake.gif
+
+AddIcon (IMG,/icons/image.xbm) .gif .jpg .xbm
+AddIcon /icons/dir.xbm ^^DIRECTORY^^
+AddIcon /icons/backup.xbm *~ 
 
 # Set the handler for the / root of the website
 # to use Apache2::AutoIndex::XSLT.
 
-<Location />
-    SetHandler perl-script
+<Location "/">
+    SetHandler modperl
     PerlResponseHandler Apache2::AutoIndex::XSLT
     Options +Indexes +FollowSymLinks
 

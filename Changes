@@ -1,3 +1,15 @@
+Version 0.02 - 3rd January 2007
+    + Fixed examples/apache/htdocs/favicon.ico.
+    + Mostly implemented the AddDescription configuration
+      directive handling code.
+    + Added RenderXSLT and RenderXSLTEnvVar Apache
+      configuration directives to control how and when
+      server-side XSLT rendering will happen using the
+      XML::LibXML and XML::LibXSLT modules.
+    + Updated example configuration to include dynamic
+      server-side XSLT rendering for older browsers.
+    + Added some Apache::Test unit tests.
+
 Version 0.01 - 25th December 2006
     + Still development code.
     + Changed default value of 'mycomputer_root' variable

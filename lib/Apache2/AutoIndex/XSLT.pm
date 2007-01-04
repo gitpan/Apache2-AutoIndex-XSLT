@@ -1,6 +1,6 @@
 ############################################################
 #
-#   $Id: XSLT.pm 872 2006-12-24 22:41:41Z nicolaw $
+#   $Id: XSLT.pm 898 2007-01-04 22:43:26Z nicolaw $
 #   Apache2::AutoIndex::XSLT - XSLT Based Directory Listings
 #
 #   Copyright 2006 Nicola Worthington
@@ -61,7 +61,7 @@ use Apache2::URI qw(); # $r->construct_url
 use Apache2::Access qw(); # $r->allow_options
 
 #use Apache2::Directive qw();  # Possibly not needed
-#use Apache2::SubRequest qw(); # Possibly not needed
+use Apache2::SubRequest qw(); # Needed for subrequests :)
 
 # Start here ...
 # http://perl.apache.org/docs/2.0/user/config/custom.html
@@ -73,7 +73,7 @@ use Apache2::Access qw(); # $r->allow_options
 # http://www.modperl.com/book/chapters/ch8.html
 
 use vars qw($VERSION %DIRECTIVES %COUNTERS %FILETYPES);
-$VERSION = '0.01' || sprintf('%d.%02d', q$Revision: 531 $ =~ /(\d+)/g);
+$VERSION = '0.02' || sprintf('%d.%02d', q$Revision: 531 $ =~ /(\d+)/g);
 %COUNTERS = (Listings => 0, Files => 0, Directories => 0, Errors => 0);
 
 
@@ -125,7 +125,7 @@ sub handler {
 	# Dump the configuration out to screen
 	if (defined $qstring->{CONFIG}) {
 		$r->content_type('text/plain');
-		print dump_apache_configuration($r);
+		$r->print(dump_apache_configuration($r));
 		return Apache2::Const::OK;
 	}
 
@@ -140,17 +140,57 @@ sub handler {
 
 	# Return a directory listing if we're allowed to
 	if ($r->allow_options & Apache2::Const::OPT_INDEXES) {
-		$r->content_type('text/xml; charset="utf-8"');
+
+		# Should we render the XSLT or not?
+		my $render = 0;
+		if ($dir_cfg->{RenderXSLT} ||
+			(!exists $dir_cfg->{RenderXSLT} && 
+			defined $dir_cfg->{RenderXSLTEnvVar} &&
+			defined $ENV{$dir_cfg->{RenderXSLTEnvVar}} &&
+			$ENV{$dir_cfg->{RenderXSLTEnvVar}} =~ /^\s*(On|1|Yes|True)\s*$/i)
+				) {
+			eval {
+				require XML::LibXSLT;
+				require XML::LibXML;
+				$render = 1;
+			};
+			$r->log_error('Failed to load XML::LibXML or XML::LibXSLT modules: ', $@) if $@;
+		}
+
+		# Send the appropriate content type
+		my $content_type = $render
+					? 'text/html'
+					: 'text/xml; charset="utf-8"';
+		$r->content_type($content_type);
 		return Apache2::Const::OK if $r->header_only;
 
 		# The dir_xml subroutine will actually print and output
 		# all the XML DTD and XML, returning an OK if everything
 		# was successful.
 		my $rtn = Apache2::Const::SERVER_ERROR;
-		eval { $rtn = dir_xml($r,$dir_cfg,$qstring); };
-		if ($@) {
+		my $xml;
+		eval {
+			$xml = dir_xml($r,$dir_cfg,$qstring);
+			unless ($render) {
+				$r->print($xml);
+			} else {
+				my $parser = XML::LibXML->new();
+				my $source = $parser->parse_string($xml);
+
+				my $subr = $r->lookup_uri($dir_cfg->{IndexStyleSheet});
+				my $xslt = XML::LibXSLT->new();
+				my $style_doc = $parser->parse_file($subr->filename);
+
+				my $stylesheet = $xslt->parse_stylesheet($style_doc);
+				my $results = $stylesheet->transform($source);
+				$r->print($stylesheet->output_string($results));
+			}
+			$rtn = Apache2::Const::OK;
+		};
+		if (!defined $xml || $@) {
 			$COUNTERS{Errors}++;
-			warn $@, print $@;
+			$r->log_error($@);
+			$r->print($@);
 		};
 		return $rtn;
 
@@ -199,7 +239,7 @@ sub transhandler {
 #
 
 # Let Apache2::Status know we're here if it's hanging around
-unless (exists $ENV{AUTOMATED_TESTING}) {
+if (exists $ENV{MOD_PERL}) {
 	eval { Apache2::Status->menu_item('AutoIndex' => sprintf('%s status',__PACKAGE__),
 		\&status) if Apache2::Module::loaded('Apache2::Status'); };
 }
@@ -262,6 +302,7 @@ sub init_handler {
 
 sub dir_xml {
 	my ($r,$dir_cfg,$qstring) = @_;
+	my $xml = '';
 
 	# Increment listings counter
 	$COUNTERS{Listings}++;
@@ -283,10 +324,12 @@ sub dir_xml {
 	}
 
 	# Send the XML header and top of the index tree
-	print_xml_header($r,$dir_cfg);
-	printf "<index path=\"%s\" href=\"%s\" >\n", $r->uri, $r->construct_url;
-	print_xml_options($r,$qstring,$dir_cfg);
-	print "\t<updir icon=\"/icons/__back.png\" />\n" unless $r->uri =~ m,^/?$,;
+	$xml .= xml_header($r,$dir_cfg);
+	$xml .= sprintf("<index path=\"%s\" href=\"%s\" >\n",
+				$r->uri, $r->construct_url);
+	$xml .= xml_options($r,$qstring,$dir_cfg);
+	$xml .= "\t<updir icon=\"/icons/__back.png\" />\n"
+				unless $r->uri =~ m,^/?$,;
 
 	# Build a list of attributes for each item in the directory and then
 	# print it as an element in the index tree.
@@ -299,7 +342,7 @@ sub dir_xml {
 		my $type = file_type($r,$id,$filename);
 		my $attr = build_attributes($r,$dir_cfg,$id,$filename,$type);
 
-		printf("\t<%s %s />\n", $type, join(' ',
+		$xml .= sprintf("\t<%s %s />\n", $type, join(' ',
 					map { sprintf("\n\t\t%s=\"%s\"",$_,$attr->{$_})
 							if defined $_ && defined $attr->{$_} }
 						keys(%{$attr})
@@ -310,21 +353,23 @@ sub dir_xml {
 	}
 
 	# Close the index tree, directory handle and return
-	print "</index>\n";
+	$xml .= "</index>\n";
 	closedir($dh);
-	return Apache2::Const::OK;
+
+	return $xml;
 }
 
 
-sub print_xml_options {
+sub xml_options {
 	my ($r,$qstring,$dir_cfg) = @_;
+	my $xml = '';
 
 	my $format = "\t\t<option name=\"%s\" value=\"%s\" />\n";
-	print "\t<options>\n";
+	$xml .= "\t<options>\n";
 
 	# Query string options
 	for my $option (qw(C O F V P)) {
-		printf($format,$option,$qstring->{$option})
+		$xml .= sprintf($format,$option,$qstring->{$option})
 			if defined $qstring->{$option} &&
 				$qstring->{$option} =~ /\S+/;
 	}
@@ -339,11 +384,12 @@ sub print_xml_options {
 				)) {
 			# Don't bother printing stuff that we only have
 			# some confusing internal complex data structure for
-			printf($format,$d,$value) unless ref($value);
+			$xml .= sprintf($format,$d,$value) unless ref($value);
 		}
 	}
 
-	print "\t</options>\n";
+	$xml .= "\t</options>\n";
+	return $xml;
 }
 
 
@@ -393,13 +439,20 @@ sub build_attributes {
 		$attr->{href} = URI::Escape::uri_escape($id);
 		$attr->{href} .= '/' if $type eq 'dir';
 		$attr->{title} = XML::Quote::xml_quote($id);
-		$attr->{desc} = $type eq 'dir' ? 'File Folder' : 'File';
-		if ($attr->{ext}) {
-			$attr->{desc} = exists $FILETYPES{lc($attr->{ext})} ?
-					$FILETYPES{lc($attr->{ext})}->{DisplayName} || '' : '';
-			$attr->{desc} ||= sprintf('%s File',uc($attr->{ext}));
-			$attr->{desc} = XML::Quote::xml_quote($attr->{desc});
+
+		$attr->{desc} = $type eq 'dir'
+				? 'File Folder'
+				: defined $attr->{ext}
+					? sprintf('%s File',uc($attr->{ext}))
+					: 'File';
+
+		if (exists $dir_cfg->{AddDescription}->{$r->uri.URI::Escape::uri_escape($id)}) {
+			$attr->{desc} = $dir_cfg->{AddDescription}->{$r->uri.URI::Escape::uri_escape($id)};
+		} elsif (defined $FILETYPES{lc($attr->{ext})}->{DisplayName}) {
+			$attr->{desc} = $FILETYPES{lc($attr->{ext})}->{DisplayName};
 		}
+
+		$attr->{desc} = XML::Quote::xml_quote($attr->{desc});
 	}
 
 	return $attr;
@@ -412,15 +465,16 @@ sub file_type {
 }
 
 
-sub print_xml_header {
+sub xml_header {
 	my ($r,$dir_cfg) = @_;
+	my $xml = '';
 
 	my $xslt = $dir_cfg->{IndexStyleSheet} || '';
 	my $type = $xslt =~ /\.css/ ? 'text/css' : 'text/xsl';
 
-	print qq{<?xml version="1.0"?>\n};
-	print qq{<?xml-stylesheet type="$type" href="$xslt"?>\n} if $xslt;
-	print qq{$_\n} for (
+	$xml .= qq{<?xml version="1.0"?>\n};
+	$xml .= qq{<?xml-stylesheet type="$type" href="$xslt"?>\n} if $xslt;
+	$xml .= qq{$_\n} for (
 			'<!DOCTYPE index [',
 			'  <!ELEMENT index (options?, updir?, (file | dir)*)>',
 			'  <!ATTLIST index href      CDATA #REQUIRED',
@@ -447,6 +501,7 @@ sub print_xml_header {
 			'                  size      CDATA #REQUIRED',
 			'                  nicesize  CDATA #IMPLIED',
 			'                  icon      CDATA #IMPLIED',
+			'                  alt       CDATA #IMPLIED',
 			'                  ext       CDATA #IMPLIED>',
 			'  <!ELEMENT dir   EMPTY>',
 			'  <!ATTLIST dir   href      CDATA #REQUIRED',
@@ -463,9 +518,12 @@ sub print_xml_header {
 			'                  perms     CDATA #REQUIRED',
 			'                  size      CDATA #REQUIRED',
 			'                  nicesize  CDATA #IMPLIED',
+			'                  alt       CDATA #IMPLIED',
 			'                  icon      CDATA #IMPLIED>',
 			']>',
 		);
+
+	return $xml;
 }
 
 
@@ -576,6 +634,18 @@ sub file_mode {
 				args_how     => Apache2::Const::TAKE1,
 				errmsg       => 'FileTypesFilename file',
 			},
+		RenderXSLT => {
+				name         => 'RenderXSLT',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::FLAG,
+				errmsg       => 'RenderXSLT On|Off',
+			},
+		RenderXSLTEnvVar => {
+				name         => 'RenderXSLTEnvVar',
+				req_override => Apache2::Const::OR_ALL,
+				args_how     => Apache2::Const::TAKE1,
+				errmsg       => 'RenderXSLTEnvVar variable name',
+			},
 
 	# http://httpd.apache.org/docs/2.2/mod/mod_autoindex.html
 		AddAlt => {
@@ -679,7 +749,7 @@ sub file_mode {
 	);
 
 # Register our interest in a bunch of Apache configuration directives
-unless (exists $ENV{AUTOMATED_TESTING}) {
+if (exists $ENV{MOD_PERL}) {
 	eval {
 		Apache2::Module::add(__PACKAGE__, [
 			map {
@@ -688,7 +758,7 @@ unless (exists $ENV{AUTOMATED_TESTING}) {
 				} else {{
 					name         => $_,
 					req_override => Apache2::Const::OR_ALL,
-				args_how     => Apache2::Const::ITERATE,
+					args_how     => Apache2::Const::ITERATE,
 				}}
 			} keys %DIRECTIVES
 		]);
@@ -747,7 +817,7 @@ sub AddAltByType {
 }
 
 sub AddDescription {
-	push_val('AddDescription', $_[0], $_[1], [( $_[3], $_[2] )]);
+	add_to_key('AddDescription', $_[0], $_[1], $_[3], $_[2]);
 }
 
 sub AddIcon {
@@ -787,6 +857,8 @@ sub IndexStyleSheet   { set_val('IndexStyleSheet',    @_) }
 sub ReadmeName        { set_val('ReadmeName',         @_) }
 sub DirectorySlash    { set_val('DirectorySlash',     @_) }
 sub FileTypesFilename { set_val('FileTypesFilename',  @_) }
+sub RenderXSLT        { set_val('RenderXSLT',         @_) }
+sub RenderXSLTEnvVar  { set_val('RenderXSLTEnvVar',   @_) }
 
 sub DIR_CREATE { defaults(@_) }
 sub SERVER_CREATE { defaults(@_) }
@@ -797,8 +869,7 @@ sub set_val {
 	my ($key, $self, $parms, $arg) = @_;
 	$self->{$key} = $arg;
 	unless ($parms->path) {
-		my $srv_cfg = Apache2::Module::get_config($self,
-		$parms->server);
+		my $srv_cfg = Apache2::Module::get_config($self,$parms->server);
 		$srv_cfg->{$key} = $arg;
 	}
 }
@@ -809,6 +880,29 @@ sub push_val {
 	unless ($parms->path) {
 		my $srv_cfg = Apache2::Module::get_config($self,$parms->server);
 		push @{ $srv_cfg->{$key} }, @args;
+	}
+}
+
+sub add_to_key {
+	my ($key, $self, $parms, $key2, @args) = @_;
+	if (exists $self->{$key}->{$key2}) {
+		$self->{$key}->{$key2} = [($self->{$key}->{$key2})]
+			if !ref($self->{$key}->{$key2});
+		push @{$self->{$key}->{$key2}}, @args;
+	} else {
+		if (@args > 1) { $self->{$key}->{$key2} = \@args; }
+		else { $self->{$key}->{$key2} = $args[0]; }
+	}
+	unless ($parms->path) {
+		my $srv_cfg = Apache2::Module::get_config($self,$parms->server);
+		if (exists $srv_cfg->{$key}->{$key2}) {
+			$srv_cfg->{$key}->{$key2} = [($srv_cfg->{$key}->{$key2})]
+				if !ref($srv_cfg->{$key}->{$key2});
+			push @{$srv_cfg->{$key}->{$key2}}, @args;
+		} else {
+			if (@args > 1) { $srv_cfg->{$key}->{$key2} = \@args; }
+			else { $srv_cfg->{$key}->{$key2} = $args[0]; }
+		}
 	}
 }
 
@@ -902,6 +996,23 @@ by the Apache::AutoIndex::XSLT module itself, and some through a combination
 of the I<options> elements presented in the output XML and the XSLT stylesheet.
 As a result, some of these configuration directives will do little or nothing
 at all if the XSLT stylesheet used does not use them.
+
+=head2 FileTypesFilename
+
+     FileTypesFilename
+
+=head2 RenderXSLT
+
+     RenderXSLT On
+
+=head2 RenderXSLTEnvVar
+
+    SetEnvIf Remote_Addr . RenderXSLT=On
+    BrowserMatch "Firefox/(2.0|1.5|1.0.[234567])" !RenderXSLT
+    BrowserMatch "MSIE [67].0" !RenderXSLT
+    BrowserMatch "Netscape/8" !RenderXSLT
+    BrowserMatch "Opera/9" !RenderXSLT
+    RenderXSLTEnvVar RenderXSLT
 
 =head2 AddAlt
 
@@ -1071,8 +1182,6 @@ pointing to a directory or not. With this enabled (which is the default), if a
 user requests a resource without a trailing slash, which points to a directory,
 the user will be redirected to the same resource, but with trailing slash.
 
-=head2 FileTypesFilename
-
 =head1 XSLT STYLESHEET
 
 The XSLT stylesheet will default to I<index.xslt> in the DocumentRoot of the
@@ -1090,7 +1199,7 @@ examples/*, L<http://bb-207-42-158-85.fallbr.tfb.net/>
 
 =head1 VERSION
 
-$Id: XSLT.pm 872 2006-12-24 22:41:41Z nicolaw $
+$Id: XSLT.pm 898 2007-01-04 22:43:26Z nicolaw $
 
 =head1 AUTHOR
 

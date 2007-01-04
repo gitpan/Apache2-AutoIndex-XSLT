@@ -1,11 +1,15 @@
-# $Id: 11pod_coverage.t 827 2006-11-30 00:58:59Z nicolaw $
+# $Id: 11pod_coverage.t 889 2007-01-04 14:53:13Z nicolaw $
 
 use Test::More;
 eval "use Test::Pod::Coverage 1.00";
-plan skip_all => "Test::Pod::Coverage 1.00 required for testing POD Coverage" if 1 || $@;
+plan skip_all => "Test::Pod::Coverage 1.00 required for testing POD Coverage" if $@;
 all_pod_coverage_ok({
 		also_private => [ qr/^[A-Z_]+$/ ],
-		trustme => [ qw(handler status) ]
+		trustme => [ qw(handler
+			status add_to_key build_attributes comify defaults dir_xml
+			dump_apache_configuration file_mode file_type get_config
+			glob2regex icon_by_extension merge push_val push_val_on_key
+			set_val stat_file xml_header xml_options ) ]
 	}); #Ignore all caps
 
 1;
