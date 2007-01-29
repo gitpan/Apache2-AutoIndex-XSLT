@@ -221,7 +221,7 @@ SEE ALSO
     <http://bb-207-42-158-85.fallbr.tfb.net/>
 
 VERSION
-    $Id: XSLT.pm 898 2007-01-04 22:43:26Z nicolaw $
+    $Id: XSLT.pm 922 2007-01-29 23:35:33Z nicolaw $
 
 AUTHOR
     Nicola Worthington <nicolaw@cpan.org>

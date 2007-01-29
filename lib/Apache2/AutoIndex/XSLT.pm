@@ -1,6 +1,6 @@
 ############################################################
 #
-#   $Id: XSLT.pm 898 2007-01-04 22:43:26Z nicolaw $
+#   $Id: XSLT.pm 922 2007-01-29 23:35:33Z nicolaw $
 #   Apache2::AutoIndex::XSLT - XSLT Based Directory Listings
 #
 #   Copyright 2006 Nicola Worthington
@@ -73,7 +73,7 @@ use Apache2::SubRequest qw(); # Needed for subrequests :)
 # http://www.modperl.com/book/chapters/ch8.html
 
 use vars qw($VERSION %DIRECTIVES %COUNTERS %FILETYPES);
-$VERSION = '0.02' || sprintf('%d.%02d', q$Revision: 531 $ =~ /(\d+)/g);
+$VERSION = '0.03' || sprintf('%d.%02d', q$Revision: 531 $ =~ /(\d+)/g);
 %COUNTERS = (Listings => 0, Files => 0, Directories => 0, Errors => 0);
 
 
@@ -1199,7 +1199,7 @@ examples/*, L<http://bb-207-42-158-85.fallbr.tfb.net/>
 
 =head1 VERSION
 
-$Id: XSLT.pm 898 2007-01-04 22:43:26Z nicolaw $
+$Id: XSLT.pm 922 2007-01-29 23:35:33Z nicolaw $
 
 =head1 AUTHOR
 

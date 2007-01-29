@@ -1,6 +1,6 @@
 ---
 name: Apache2-AutoIndex-XSLT
-version: 0.02
+version: 0.03
 author:
   - 'Nicola Worthington <nicolaw@cpan.org>'
 abstract: XSLT Based Directory Listings
@@ -39,4 +39,4 @@ meta-spec:
 provides:
   Apache2::AutoIndex::XSLT:
     file: lib/Apache2/AutoIndex/XSLT.pm
-    version: 0.02
+    version: 0.03

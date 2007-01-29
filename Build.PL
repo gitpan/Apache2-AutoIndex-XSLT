@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 ############################################################
 #
-#   $Id: Build.PL 886 2007-01-04 14:25:25Z nicolaw $
+#   $Id: Build.PL 923 2007-01-29 23:35:45Z nicolaw $
 #   DistBuild.PL - CPAN Distribution Build Script for Subversion & CVS
 #
 #   Copyright 2006 Nicola Worthington
@@ -134,4 +134,5 @@ sub may_send_version_information {
 }
 
 1;
+
 
