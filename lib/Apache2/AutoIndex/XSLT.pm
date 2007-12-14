@@ -1,9 +1,9 @@
 ############################################################
 #
-#   $Id: XSLT.pm 922 2007-01-29 23:35:33Z nicolaw $
+#   $Id: XSLT.pm 1077 2007-12-14 17:44:32Z nicolaw $
 #   Apache2::AutoIndex::XSLT - XSLT Based Directory Listings
 #
-#   Copyright 2006 Nicola Worthington
+#   Copyright 2006, 2007 Nicola Worthington
 #
 #   Licensed under the Apache License, Version 2.0 (the "License");
 #   you may not use this file except in compliance with the License.
@@ -63,6 +63,8 @@ use Apache2::Access qw(); # $r->allow_options
 #use Apache2::Directive qw();  # Possibly not needed
 use Apache2::SubRequest qw(); # Needed for subrequests :)
 
+use Apache2::RequestIO qw(); # Needed for $r->print
+
 # Start here ...
 # http://perl.apache.org/docs/2.0/user/config/custom.html
 # http://perl.apache.org/docs/2.0/api/Apache2/Module.html
@@ -73,7 +75,7 @@ use Apache2::SubRequest qw(); # Needed for subrequests :)
 # http://www.modperl.com/book/chapters/ch8.html
 
 use vars qw($VERSION %DIRECTIVES %COUNTERS %FILETYPES);
-$VERSION = '0.03' || sprintf('%d.%02d', q$Revision: 531 $ =~ /(\d+)/g);
+$VERSION = '0.04' || sprintf('%d.%02d', q$Revision: 531 $ =~ /(\d+)/g);
 %COUNTERS = (Listings => 0, Files => 0, Directories => 0, Errors => 0);
 
 
@@ -189,8 +191,7 @@ sub handler {
 		};
 		if (!defined $xml || $@) {
 			$COUNTERS{Errors}++;
-			$r->log_error($@);
-			$r->print($@);
+			warn $@, $r->print($@);
 		};
 		return $rtn;
 
@@ -239,7 +240,7 @@ sub transhandler {
 #
 
 # Let Apache2::Status know we're here if it's hanging around
-if (exists $ENV{MOD_PERL}) {
+unless (exists $ENV{AUTOMATED_TESTING}) {
 	eval { Apache2::Status->menu_item('AutoIndex' => sprintf('%s status',__PACKAGE__),
 		\&status) if Apache2::Module::loaded('Apache2::Status'); };
 }
@@ -749,7 +750,7 @@ sub file_mode {
 	);
 
 # Register our interest in a bunch of Apache configuration directives
-if (exists $ENV{MOD_PERL}) {
+unless (exists $ENV{AUTOMATED_TESTING}) {
 	eval {
 		Apache2::Module::add(__PACKAGE__, [
 			map {
@@ -1199,13 +1200,13 @@ examples/*, L<http://bb-207-42-158-85.fallbr.tfb.net/>
 
 =head1 VERSION
 
-$Id: XSLT.pm 922 2007-01-29 23:35:33Z nicolaw $
+$Id: XSLT.pm 1077 2007-12-14 17:44:32Z nicolaw $
 
 =head1 AUTHOR
 
-Nicola Worthington <nicolaw@cpan.org>
+Nicola Worthington <nicolaw@cpan.org>, TFB Technology Ltd.
 
-L<http://perlgirl.org.uk>
+L<http://perlgirl.org.uk>, L<http://www.tfbtechnology.ltd.uk>, L<http://www.tfb.net>
 
 If you like this software, why not show your appreciation by sending the
 author something nice from her
@@ -1222,7 +1223,7 @@ documentation taken.
 
 =head1 COPYRIGHT
 
-Copyright 2006 Nicola Worthington.
+Copyright 2006, 2007 Nicola Worthington.
 
 This software is licensed under The Apache Software License, Version 2.0.
 

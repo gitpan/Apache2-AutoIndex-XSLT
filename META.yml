@@ -1,8 +1,8 @@
 ---
 name: Apache2-AutoIndex-XSLT
-version: 0.03
+version: 0.04
 author:
-  - 'Nicola Worthington <nicolaw@cpan.org>'
+  - 'Nicola Worthington <nicolaw@cpan.org>, TFB Technology Ltd.'
 abstract: XSLT Based Directory Listings
 license: open_source
 requires:
@@ -21,22 +21,20 @@ requires:
   File::Spec: 0
   URI::Escape: 0
   XML::Quote: 0
-  mod_perl2: 2.000001
 build_requires:
   Apache::Test: 0
-  Apache::TestMB: 0
   Apache::TestRequest: 0
   Apache::TestUtil: 0
   Test: 0
   Test::More: 0
   Test::Pod: 0
   Test::Pod::Coverage: 0
-  mod_perl2: 2.000001
-generated_by: Module::Build version 0.2806
-meta-spec:
-  url: http://module-build.sourceforge.net/META-spec-v1.2.html
-  version: 1.2
+  XML::Validate: 0
 provides:
   Apache2::AutoIndex::XSLT:
     file: lib/Apache2/AutoIndex/XSLT.pm
-    version: 0.03
+    version: 0.04
+generated_by: Module::Build version 0.2808
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.2.html
+  version: 1.2

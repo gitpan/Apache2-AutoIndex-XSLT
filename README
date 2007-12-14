@@ -221,12 +221,13 @@ SEE ALSO
     <http://bb-207-42-158-85.fallbr.tfb.net/>
 
 VERSION
-    $Id: XSLT.pm 922 2007-01-29 23:35:33Z nicolaw $
+    $Id: XSLT.pm 1077 2007-12-14 17:44:32Z nicolaw $
 
 AUTHOR
-    Nicola Worthington <nicolaw@cpan.org>
+    Nicola Worthington <nicolaw@cpan.org>, TFB Technology Ltd.
 
-    <http://perlgirl.org.uk>
+    <http://perlgirl.org.uk>, <http://www.tfbtechnology.ltd.uk>,
+    <http://www.tfb.net>
 
     If you like this software, why not show your appreciation by sending the
     author something nice from her Amazon wishlist? (
@@ -241,7 +242,7 @@ AUTHOR
     some documentation taken.
 
 COPYRIGHT
-    Copyright 2006 Nicola Worthington.
+    Copyright 2006, 2007 Nicola Worthington.
 
     This software is licensed under The Apache Software License, Version
     2.0.
